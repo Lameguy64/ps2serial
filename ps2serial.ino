@@ -1,6 +1,6 @@
 /* PS2SERIAL - PS/2 to Serial mouse converter firmware
  * 2018 Meido-Tek Productions (Lameguy64)
- * Version 1.0
+ * Version 1.1
  * 
  * This sketch is for a PS/2 to Serial mouse converter circuit that would allow the use of
  * a modern PS/2 laser mouse on a vintage PC that does not support PS/2. Essentially a very
@@ -20,12 +20,16 @@
  *    toggling RTS) to indicate that the converter is working properly and the driver\
  *    should recognize it as a 3-button Logitech mouse.
  *    
+ * Fixes in 1.1:
+ *  - Fixed mouse button handling issues that made certain mouse operations (such as
+ *    double-click) not work correctly.
+ *  
  * Known bugs/issues so far:
  *  - There might be some slight input lag with the mouse movement. Might be because the
  *    Arduino is not fast enough (tested on a Leonardo with a ATmega 32u4).
  *  - Mouse input becomes slightly choppy while pressing down middle button due to
- *    additional polling of the PS/2 mouse to compensate for the additional delay caused
- *    by sending 4 byte packets instead of 3 byte packets for the 3rd button status.
+ *    the added delay of sending 4 byte packets for the 3rd button status instead of 3
+ *    byte packets.
  *    
  *  As always, feel free to improve upon this chode and issue a pull request to merge with
  *  the main repository.
@@ -149,11 +153,14 @@ void setup()
 
 void loop()
 {
-  bool event = false;
-  bool event_mb = false;
-  int data[2];
+  short event = false;
+  short event_mb = false;
 
-  /* Handle mouse movement */
+  short left_changed = false;
+  short right_changed = false;
+  short middle_changed = false;
+  
+  int data[2];
   
   /* Read mouse data 4 times as PS/2 is too fast for serial */
   for(int i=0; i<4; i++)
@@ -162,13 +169,87 @@ void loop()
     
     x_status += data[1];
     y_status += -data[2];
+
+    /* Check mouse events */
+    
+    if ( !left_changed )
+    {
+      if ( data[0] & 0x1 ) /* Left mouse button */
+      {
+        if ( !left_status )
+        {
+          event = true;
+          left_status = true;
+          left_changed = true;
+        }
+      }
+      else
+      {
+        if ( left_status )
+        { 
+          event = true;
+          left_status = false;
+          left_changed = true;
+        }
+      }
+    }
+
+    if ( !right_changed )
+    {
+      if ( data[0] & 0x2 )  /* Right mouse button */
+      {
+        if ( !right_status )
+        {
+          event = true;
+          right_status = true;
+          right_changed = true;
+        }
+      }
+      else
+      {
+        if ( right_status )
+        { 
+          event = true;
+          right_status = false;
+          right_changed = true;
+        }
+      }
+    }
+
+    if ( !middle_changed )
+    {
+      if ( data[0] & 0x4 )  /* Middle mouse button */
+      {
+        if (!middle_status)
+        {
+          event = true;
+          event_mb = true;
+          middle_status = true;
+          middle_changed = true;
+        }
+        /* To compensate for the additional delay from sending 4 byte packets instead of 3 */
+        mouse.report( data );
+        mouse.report( data );
+      }
+      else
+      {
+        if ( middle_status )
+        {
+          event = true;
+          event_mb = true;
+          middle_status = false;
+          middle_changed = true;
+        }
+      }
+    }
+    
   } 
 
   /* Divide velocity values to smoothen the movement */
   int x_status_d = x_status / 2;
   int y_status_d = y_status / 2;
   
-  /* To make sure very fine movements are still possible */
+  /* Reset X Y counters when divided result is non-zero */
   if ( x_status_d != 0 )
   {
     x_status = 0;
@@ -180,67 +261,9 @@ void loop()
     y_status = 0;
     event = true;
   }
-
-  /* Handle mouse clicks from last mouse read */
   
-  if ( data[0] & 0x1 )  /* Left mouse button */
-  {
-    if ( !left_status )
-    {
-      event = true;
-      left_status = true;
-    }
-  }
-  else
-  {
-    if ( left_status )
-    { 
-      event = true;
-      left_status = false;
-    }
-  }
-
-  if ( data[0] & 0x2 )  /* Right mouse button */
-  {
-    if ( !right_status )
-    {
-      event = true;
-      right_status = true;
-    }
-  }
-  else
-  {
-    if ( right_status )
-    { 
-      event = true;
-      right_status = false;
-    }
-  }
-
-  if ( data[0] & 0x4 )  /* Middle mouse button */
-  {
-    if (!middle_status)
-    {
-      event = true;
-      event_mb = true;
-      middle_status = true;
-    }
-    /* To compensate for the additional delay from sending 4 byte packets instead of 3 */
-    mouse.report( data );
-    mouse.report( data );
-  }
-  else
-  {
-    if ( middle_status )
-    {
-      event = true;
-      event_mb = true;
-      middle_status = false;
-    }
-  }
-  
-  /* Send mouse events if there was any */
-  if (event)
+  /* Send mouse events if there's any */
+  if ( event )
   {
     #ifdef DEBUG
     Serial.print( "LB:" );
@@ -263,9 +286,10 @@ void loop()
     encodePacket( x_status_d, y_status_d, 
       left_status, right_status, packet );
 
-    /* Add additinal byte for the middle mouse button */
+    /* Send extra byte for the middle mouse button status */
     if ( middle_status )
     {
+      /* Keep sending 4th byte as long as middle button is down */
       #ifdef DEBUG
       Serial.print("MB is down.\n");
       #endif
@@ -274,6 +298,7 @@ void loop()
     }
     else
     {
+      /* 4th byte is sent once when middle button is lifted */
       if ( event_mb )
       {
         #ifdef DEBUG
