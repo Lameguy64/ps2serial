@@ -1,6 +1,6 @@
 /* PS2SERIAL - PS/2 to Serial mouse converter firmware
  * 2018 Meido-Tek Productions (Lameguy64)
- * Version 1.1
+ * Version 1.2
  * 
  * This sketch is for a PS/2 to Serial mouse converter circuit that would allow the use of
  * a modern PS/2 laser mouse on a vintage PC that does not support PS/2. Essentially a very
@@ -17,9 +17,16 @@
  *  - After the blink sequence, the converter should be detected by your vintage PC as a
  *    3-button Logitech mouse.
  *  - L13 light will blink every time the mouse driver tries to initialize the mouse (by
- *    toggling RTS) to indicate that the converter is working properly and the driver\
+ *    toggling RTS) to indicate that the converter is working properly and the mouse driver
  *    should recognize it as a 3-button Logitech mouse.
- *    
+ * 
+ * Fixes in 1.2:
+ *  - Made code changes to allow sketch to be compiled for Arduinos with single hardware
+ *    UARTs (such as Arduino Nanos, I didn't know about that beforehand).
+ *	- Switched to Microsoft 3-button mouse protocol which solves laggy mouse issue when
+ *    middle button is held down. Logitech protocol can be re-enabled by commenting out a
+ *    line though.
+ *  
  * Fixes in 1.1:
  *  - Fixed mouse button handling issues that made certain mouse operations (such as
  *    double-click) not work correctly.
@@ -27,7 +34,7 @@
  * Known bugs/issues so far:
  *  - There might be some slight input lag with the mouse movement. Might be because the
  *    Arduino is not fast enough (tested on a Leonardo with a ATmega 32u4).
- *  - Mouse input becomes slightly choppy while pressing down middle button due to
+ *  - Mouse input becomes choppy while holding down the middle button due to
  *    the added delay of sending 4 byte packets for the 3rd button status instead of 3
  *    byte packets.
  *    
@@ -39,8 +46,12 @@
 #include <PS2Mouse.h>
 
 
-/* Pin settings, feel free to change to what you find most convenient to use */
-
+/* Pin settings, feel free to change to what you find most convenient to use.
+ *  
+ * Serial data will always be transmitted in Pin 2 (Tx) of the Arduino but you must
+ * connect it through a 74LS00 to invert the logic levels so the PC serial can
+ * understand it. No MAX-232 required as 5v is enough to drive most serial interfaces.
+ */
 #define PS2_MOUSE_CLOCK   2   /* Must connect to Pin 5 (clock) of PS/2 mouse */
 #define PS2_MOUSE_DATA    4   /* Must connect to Pin 1 (data) of PS/2 mouse */
 
@@ -48,12 +59,22 @@
                               /* (NOTE: must go through a 5v regulator and */
                               /* 200ohm resistor first or you'll blow the pin) */
 
-/* Serial data will always be transmitted in Pin 2 (Tx) of the Arduino but you must
- * connect it through a 74LS00 to invert the logic levels so the PC serial can
- * understand it. No MAX-232 required as 5v is enough to drive most serial interfaces.
+/* Uncomment to use Logitech serial mouse protocol. Not exactly recommended as holding
+ * down the middle button will cause choppy mouse movement while the Microsoft protocol
+ * does not but the option is still here to those who want to use Logitech protocol.
  */
+#define USE_MS_PROTOCOL
+							  
+/* Uncomment to use Serial1 class instead of Serial for Arduinos with dual
+ * hardware UARTS. If commented, Serial class is used to send mouse data for Arduinos
+ * with a single UART.
+ */
+//#define USE_SERIAL1
 
-/* Uncomment to enable debug messages over USB serial (serial monitor must be active) */
+/* Uncomment to enable debug messages over USB serial (serial monitor must be active).
+ * Debug messages are sent using the Serial class. Don't uncomment for Arduinos with a
+ * single hardware UART.
+ */
 //#define DEBUG
 
 
@@ -68,7 +89,6 @@ int y_status = 0;
 
 /* Class from PS2Mouse for reading PS/2 mouse data */
 PS2Mouse mouse( PS2_MOUSE_CLOCK, PS2_MOUSE_DATA, STREAM );
-
 
 /* Serial mouse packet encoding routine */
 /* Encodes a 3 byte mouse packet that complies with Microsoft Mouse/Logitech protocol */
@@ -133,8 +153,12 @@ void setup()
   mouse.set_scaling_1_1();
   
   /* Initialize serial for mouse data */
+  #ifdef USE_SERIAL1
   Serial1.begin( 1200, SERIAL_7N1 );
-
+  #else
+  Serial.begin( 1200, SERIAL_7N1 );
+  #endif
+  
   #ifdef DEBUG
   Serial.print("Program start!\n");
   #endif
@@ -161,6 +185,8 @@ void loop()
   short middle_changed = false;
   
   int data[2];
+  unsigned char packet[4];
+  int p_count = 3;
   
   /* Read mouse data 4 times as PS/2 is too fast for serial */
   for(int i=0; i<4; i++)
@@ -222,28 +248,37 @@ void loop()
       {
         if (!middle_status)
         {
+          #ifndef USE_MS_PROTOCOL
           event = true;
           event_mb = true;
+          #endif
           middle_status = true;
           middle_changed = true;
         }
+        
         /* To compensate for the additional delay from sending 4 byte packets instead of 3 */
+        #ifndef USE_MS_PROTOCOL
+        
         mouse.report( data );
         mouse.report( data );
+        
+        #endif
       }
       else
       {
         if ( middle_status )
         {
+          #ifndef USE_MS_PROTOCOL
           event = true;
           event_mb = true;
+          #endif
           middle_status = false;
           middle_changed = true;
         }
       }
     }
     
-  } 
+  }
 
   /* Divide velocity values to smoothen the movement */
   int x_status_d = x_status / 2;
@@ -280,20 +315,19 @@ void loop()
     #endif
 
     /* Encode the packet */
-    unsigned char packet[4];
-    int p_count = 3;
-    
     encodePacket( x_status_d, y_status_d, 
       left_status, right_status, packet );
 
     /* Send extra byte for the middle mouse button status */
+    #ifndef USE_MS_PROTOCOL
     if ( middle_status )
     {
       /* Keep sending 4th byte as long as middle button is down */
       #ifdef DEBUG
       Serial.print("MB is down.\n");
       #endif
-      packet[3] = 0x20;
+	  
+	    packet[3] = 0x20;
       p_count = 4;
     }
     else
@@ -304,14 +338,38 @@ void loop()
         #ifdef DEBUG
         Serial.print("MB had been lifted.\n");
         #endif
+        
         packet[3] = 0x0;
         p_count = 4;
       }
     }
+    #endif
 
-    /* Send to PC via serial (not USB) */
+    /* Send packet */
+    #ifdef USE_SERIAL1
     Serial1.write( packet, p_count );
+    #else
+    Serial.write( packet, p_count );
+    #endif
   }
+
+  #ifdef USE_MS_PROTOCOL
+  // Send blank packet for middle mouse status
+  if ( middle_changed )
+  {
+    packet[0] = 0x40;
+    packet[1] = 0x00;
+    packet[2] = 0x00;
+    p_count = 3;
+    
+    #ifdef USE_SERIAL1
+    Serial1.write( packet, p_count );
+    #else
+    Serial.write( packet, p_count );
+    #endif
+  }
+  #endif
+
  
   /* Send init bytes when RTS has been toggled */
   if ( digitalRead( RTS_PROBE ) )
@@ -323,9 +381,31 @@ void loop()
       #endif
       
       delay(14);
+      #ifdef USE_SERIAL1
       Serial1.write( 'M' );
+      #else
+      Serial.write( 'M' );
+      #endif
+      
       delay(63);
+      
+      #ifndef USE_MS_PROTOCOL
+      
+      #ifdef USE_SERIAL1
       Serial1.write( '3' );
+      #else
+      Serial.write( '3' );
+      #endif
+
+      /*#else
+      
+      #ifdef USE_SERIAL1
+      Serial1.write( '3' );
+      #else
+      Serial.write( '3' );
+      #endif*/
+      
+      #endif
       
       left_status = false;
       right_status = false;

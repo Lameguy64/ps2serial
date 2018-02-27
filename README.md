@@ -1,12 +1,12 @@
 # PS2Serial
 Schematic and Arduino code for building your own PS/2 to Serial mouse adapter to be used with vintage computers that lack support for PS/2 mouse. Intended as a cheap and much more reliable DIY alternative to a vintage serial mouse and it allows for a modern laser mouse to be used with a vintage computer that would otherwise not support it.
 
-The adapter emulates a 3 button Logitech serial mouse but should be Microsoft Mouse compatible though only 2 buttons will be usable. Scrollwheel is not supported and will likely never be implemented as hardly any software or operating system supports a serial mouse with a scroll wheel.
+The adapter emulates a 3 button Microsoft serial mouse. Drivers that don't support the 3 button version will only be able to register 2 buttons. Scrollwheel is not supported and will likely never be implemented as hardly any software or operating system supports a serial mouse with a scroll wheel.
 
 This project was prototyped using an Arduino Leonardo but it should work with any 5v Arduino with a built-in serial UART with little to no modification to the Arduino code. The adapter worked flawlessly on a 386DX connected to one of its serial ports.
 
 ## Features
-* Logitech 3-button mouse compatible.
+* Microsoft 3-button mouse compatible (Logitech also supported).
 * ~40 reports per second event rate (when not holding down the middle button).
 * Easy to configure Arduino sketch code to suit your build.
 
