@@ -53,7 +53,7 @@
  * understand it. No MAX-232 required as 5v is enough to drive most serial interfaces.
  */
 #define PS2_MOUSE_CLOCK   2   /* Must connect to Pin 5 (clock) of PS/2 mouse */
-#define PS2_MOUSE_DATA    4   /* Must connect to Pin 1 (data) of PS/2 mouse */
+#define PS2_MOUSE_DATA    5   /* Must connect to Pin 1 (data) of PS/2 mouse */
 
 #define RTS_PROBE         7   /* Must connect to Pin 7 (RTS) of PC serial port */
                               /* (NOTE: must go through a 5v regulator and */
