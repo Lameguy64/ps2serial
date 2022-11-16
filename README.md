@@ -29,6 +29,6 @@ As with all DIY electronics projects, this project comes with absolutely no warr
 
 I did upgrade the resistor to 1K instead of the listed
 
-Also, my ugly build that's been serving perfectly daily for over a year
+Also, my ugly build that's been serving perfectly as a daily driver for close to two years now
 
 ![ugly solder job](kroy-ugly-build.jpg)
