@@ -24,3 +24,11 @@ https://github.com/kristopher/PS2-Mouse-Arduino
 ## Disclaimer
 
 As with all DIY electronics projects, this project comes with absolutely no warranty and will not liable for any loss or damage caused to your Arduino or vintage PC you used this adapter on. Use at your own risk!
+
+# Kroy Notes
+
+I did upgrade the resistor to 1K instead of the listed
+
+Also, my ugly build that's been serving perfectly as a daily driver for close to two years now
+
+![ugly solder job](kroy-ugly-build.jpg)
